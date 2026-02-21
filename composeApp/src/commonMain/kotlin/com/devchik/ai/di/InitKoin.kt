@@ -13,7 +13,6 @@ fun initKoin(
 
         modules(
             networkModule,
-            settingsModule,
             featureAiModule,
         )
     }

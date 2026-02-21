@@ -8,9 +8,6 @@ data class DeepSeekRequest(
     val model: String,
     val messages: List<DeepSeekMessageDto>,
     val stream: Boolean = false,
-    @SerialName("max_tokens")
-    val maxTokens: Int? = null,
-    val stop: List<String>? = null,
 )
 
 @Serializable
