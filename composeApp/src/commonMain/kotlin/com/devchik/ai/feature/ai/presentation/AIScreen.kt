@@ -1,6 +1,7 @@
 package com.devchik.ai.feature.ai.presentation
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,6 +19,8 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -33,22 +36,28 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.devchik.ai.feature.ai.domain.model.AIMessage
+import kotlinx.coroutines.launch
 import org.koin.compose.viewmodel.koinViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AIScreen(
+    onOpenSettings: () -> Unit = {},
     viewModel: AIViewModel = koinViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
     var inputText by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
 
@@ -61,7 +70,14 @@ fun AIScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(title = { Text("AI Chat") })
+            TopAppBar(
+                title = { Text("AI Chat") },
+                actions = {
+                    IconButton(onClick = onOpenSettings) {
+                        Text("⚙", style = MaterialTheme.typography.titleLarge)
+                    }
+                },
+            )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { padding ->
@@ -86,6 +102,9 @@ fun AIScreen(
                         text = message.content,
                         isUser = message.role == AIMessage.Role.User,
                         isStreaming = false,
+                        onCopied = {
+                            scope.launch { snackbarHostState.showSnackbar("Скопировано") }
+                        },
                     )
                 }
 
@@ -95,6 +114,9 @@ fun AIScreen(
                             text = uiState.streamingContent,
                             isUser = false,
                             isStreaming = true,
+                            onCopied = {
+                                scope.launch { snackbarHostState.showSnackbar("Скопировано") }
+                            },
                         )
                     }
                 }
@@ -115,39 +137,64 @@ fun AIScreen(
     }
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun MessageBubble(
     text: String,
     isUser: Boolean,
     isStreaming: Boolean,
+    onCopied: () -> Unit,
 ) {
+    val clipboard = LocalClipboardManager.current
+    var menuExpanded by remember { mutableStateOf(false) }
+
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
     ) {
-        Box(
-            modifier = Modifier
-                .widthIn(max = 320.dp)
-                .clip(
-                    RoundedCornerShape(
-                        topStart = 16.dp,
-                        topEnd = 16.dp,
-                        bottomStart = if (isUser) 16.dp else 4.dp,
-                        bottomEnd = if (isUser) 4.dp else 16.dp,
+        Box {
+            Box(
+                modifier = Modifier
+                    .widthIn(max = 320.dp)
+                    .clip(
+                        RoundedCornerShape(
+                            topStart = 16.dp,
+                            topEnd = 16.dp,
+                            bottomStart = if (isUser) 16.dp else 4.dp,
+                            bottomEnd = if (isUser) 4.dp else 16.dp,
+                        )
                     )
+                    .background(
+                        if (isUser) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.surfaceVariant
+                    )
+                    .combinedClickable(
+                        onClick = {},
+                        onLongClick = { if (!isStreaming) menuExpanded = true },
+                    )
+                    .padding(12.dp),
+            ) {
+                Text(
+                    text = if (isStreaming) "$text▌" else text,
+                    color = if (isUser) MaterialTheme.colorScheme.onPrimary
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyLarge,
                 )
-                .background(
-                    if (isUser) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.surfaceVariant
+            }
+
+            DropdownMenu(
+                expanded = menuExpanded,
+                onDismissRequest = { menuExpanded = false },
+            ) {
+                DropdownMenuItem(
+                    text = { Text("Копировать") },
+                    onClick = {
+                        clipboard.setText(AnnotatedString(text))
+                        menuExpanded = false
+                        onCopied()
+                    },
                 )
-                .padding(12.dp),
-        ) {
-            Text(
-                text = if (isStreaming) "$text▌" else text,
-                color = if (isUser) MaterialTheme.colorScheme.onPrimary
-                else MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodyLarge,
-            )
+            }
         }
     }
 }
