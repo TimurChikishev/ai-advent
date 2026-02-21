@@ -8,7 +8,7 @@ import org.koin.dsl.bind
 import org.koin.dsl.module
 
 val featureAiModule = module {
-    single { AIRepositoryImpl(get()) } bind AIRepository::class
+    single { AIRepositoryImpl(get(), get()) } bind AIRepository::class
 
     viewModel { AIViewModel(get()) }
 }

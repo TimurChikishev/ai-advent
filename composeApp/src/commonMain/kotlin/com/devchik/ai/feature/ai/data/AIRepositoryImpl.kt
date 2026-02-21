@@ -1,10 +1,12 @@
 package com.devchik.ai.feature.ai.data
 
 import com.devchik.ai.BuildKonfig
+import com.devchik.ai.feature.ai.data.model.DeepSeekMessageDto
 import com.devchik.ai.feature.ai.data.model.DeepSeekRequest
 import com.devchik.ai.feature.ai.data.model.DeepSeekStreamChunk
 import com.devchik.ai.feature.ai.domain.AIRepository
 import com.devchik.ai.feature.ai.domain.model.AIMessage
+import com.devchik.ai.feature.settings.domain.SettingsRepository
 import io.ktor.client.HttpClient
 import io.ktor.client.request.header
 import io.ktor.client.request.preparePost
@@ -18,23 +20,36 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
-import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.serialization.json.Json
 
 class AIRepositoryImpl(
     private val httpClient: HttpClient,
+    private val settingsRepository: SettingsRepository,
 ) : AIRepository {
 
     override fun sendMessage(messages: List<AIMessage>): Flow<String> = channelFlow {
+        val settings = settingsRepository.settings.first()
+
+        val requestMessages = if (settings.isEnabled && settings.systemPrompt.isNotBlank()) {
+            listOf(DeepSeekMessageDto(role = "system", content = settings.systemPrompt)) +
+                messages.map { it.toDto() }
+        } else {
+            messages.map { it.toDto() }
+        }
+
         httpClient.preparePost("$BASE_URL/chat/completions") {
             contentType(ContentType.Application.Json)
             header(HttpHeaders.Authorization, "Bearer ${BuildKonfig.DEEPSEEK_API_KEY}")
             setBody(
                 DeepSeekRequest(
                     model = MODEL,
-                    messages = messages.map { it.toDto() },
+                    messages = requestMessages,
                     stream = true,
+                    maxTokens = if (settings.isEnabled) settings.maxTokens else null,
+                    stop = if (settings.isEnabled && settings.stopSequences.isNotEmpty())
+                        settings.stopSequences else null,
                 )
             )
         }.execute { response ->
@@ -51,7 +66,7 @@ class AIRepositoryImpl(
         }
     }.flowOn(Dispatchers.IO)
 
-    private fun AIMessage.toDto() = com.devchik.ai.feature.ai.data.model.DeepSeekMessageDto(
+    private fun AIMessage.toDto() = DeepSeekMessageDto(
         role = when (role) {
             AIMessage.Role.User -> "user"
             AIMessage.Role.Assistant -> "assistant"
