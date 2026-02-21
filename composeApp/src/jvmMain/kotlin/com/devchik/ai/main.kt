@@ -1,4 +1,4 @@
-package com.devchik.ai.core.app
+package com.devchik.ai
 
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
