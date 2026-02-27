@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -46,6 +45,10 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.devchik.ai.feature.ai.domain.model.AIMessage
+import com.mikepenz.markdown.m3.Markdown
+import com.mikepenz.markdown.m3.markdownColor
+import com.mikepenz.markdown.m3.markdownTypography
+import com.mikepenz.markdown.model.rememberMarkdownState
 import kotlinx.coroutines.launch
 import org.koin.compose.viewmodel.koinViewModel
 
@@ -148,6 +151,9 @@ private fun MessageBubble(
     val clipboard = LocalClipboardManager.current
     var menuExpanded by remember { mutableStateOf(false) }
 
+    val textColor = if (isUser) MaterialTheme.colorScheme.onPrimary
+    else MaterialTheme.colorScheme.onSurfaceVariant
+
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
@@ -174,12 +180,33 @@ private fun MessageBubble(
                     )
                     .padding(12.dp),
             ) {
-                Text(
-                    text = if (isStreaming) "$text▌" else text,
-                    color = if (isUser) MaterialTheme.colorScheme.onPrimary
-                    else MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodyLarge,
-                )
+                if (isUser) {
+                    Text(
+                        text = text,
+                        color = textColor,
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                } else {
+                    val displayText = if (isStreaming) "$text▌" else text
+                    val markdownState = rememberMarkdownState(
+                        content = displayText,
+                        retainState = true,
+                    )
+                    Markdown(
+                        markdownState = markdownState,
+                        colors = markdownColor(
+                            text = textColor,
+                            codeBackground = MaterialTheme.colorScheme.surfaceVariant
+                                .copy(alpha = 0.5f),
+                            inlineCodeBackground = MaterialTheme.colorScheme.surfaceVariant
+                                .copy(alpha = 0.5f),
+                            dividerColor = textColor.copy(alpha = 0.3f),
+                        ),
+                        typography = markdownTypography(
+                            paragraph = MaterialTheme.typography.bodyLarge,
+                        ),
+                    )
+                }
             }
 
             DropdownMenu(
