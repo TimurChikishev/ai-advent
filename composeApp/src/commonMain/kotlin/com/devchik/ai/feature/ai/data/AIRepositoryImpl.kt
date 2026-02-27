@@ -53,6 +53,7 @@ class AIRepositoryImpl(
                     messages = requestMessages,
                     stream = true,
                     maxTokens = if (settings.isEnabled) settings.maxTokens else null,
+                    temperature = if (settings.isEnabled) settings.temperature else null,
                     stop = if (settings.isEnabled && settings.stopSequences.isNotEmpty())
                         settings.stopSequences else null,
                 )

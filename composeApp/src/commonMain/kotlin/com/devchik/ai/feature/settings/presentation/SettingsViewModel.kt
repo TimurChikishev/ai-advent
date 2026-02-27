@@ -56,6 +56,11 @@ class SettingsViewModel(
         }
     }
 
+    fun setTemperature(value: Float) {
+        val clamped = value.coerceIn(AISettings.MIN_TEMPERATURE, AISettings.MAX_TEMPERATURE)
+        _uiState.update { it.copy(settings = it.settings.copy(temperature = clamped)) }
+    }
+
     fun setSystemPrompt(text: String) {
         _uiState.update { it.copy(settings = it.settings.copy(systemPrompt = text)) }
     }
