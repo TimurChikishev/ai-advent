@@ -3,6 +3,7 @@ package com.devchik.ai.feature.settings.domain.model
 data class AISettings(
     val isEnabled: Boolean = true,
     val maxTokens: Int = 1024,
+    val temperature: Float = DEFAULT_TEMPERATURE,
     val stopSequences: List<String> = listOf("</answer>", "Human:", "User:"),
     val systemPrompt: String = DEFAULT_SYSTEM_PROMPT,
 ) {
@@ -14,5 +15,9 @@ data class AISettings(
 
         const val MIN_TOKENS = 64
         const val MAX_TOKENS = 8192
+
+        const val MIN_TEMPERATURE = 0.0f
+        const val MAX_TEMPERATURE = 2.0f
+        const val DEFAULT_TEMPERATURE = 1.0f
     }
 }

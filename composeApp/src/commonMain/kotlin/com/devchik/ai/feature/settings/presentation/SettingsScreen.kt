@@ -125,6 +125,39 @@ fun SettingsScreen(
 
             HorizontalDivider()
 
+            // Температура
+            Column {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column {
+                        Text("Температура", style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            "Чем выше — тем креативнее ответы",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Text(
+                        text = "%.1f".format(uiState.settings.temperature),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = if (enabled) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Slider(
+                    value = uiState.settings.temperature,
+                    onValueChange = viewModel::setTemperature,
+                    valueRange = AISettings.MIN_TEMPERATURE..AISettings.MAX_TEMPERATURE,
+                    steps = 19,
+                    enabled = enabled,
+                )
+            }
+
+            HorizontalDivider()
+
             // Стоп-последовательности
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Стоп-последовательности", style = MaterialTheme.typography.titleSmall)

@@ -10,6 +10,7 @@ data class DeepSeekRequest(
     val stream: Boolean = false,
     @SerialName("max_tokens")
     val maxTokens: Int? = null,
+    val temperature: Float? = null,
     val stop: List<String>? = null,
 )
 
