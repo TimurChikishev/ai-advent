@@ -60,6 +60,7 @@ kotlin {
             implementation(libs.koin.compose)
             implementation(libs.koin.compose.viewmodel)
             implementation(libs.datastore.preferences)
+            implementation(libs.navigation.compose)
             implementation(libs.markdown.renderer)
             implementation(libs.markdown.renderer.m3)
             implementation(libs.markdown.renderer.code)
