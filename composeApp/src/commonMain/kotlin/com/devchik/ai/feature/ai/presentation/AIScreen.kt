@@ -155,7 +155,7 @@ private fun MessageBubble(
         Box {
             Box(
                 modifier = Modifier
-                    .widthIn(max = 320.dp)
+                    .fillMaxWidth(if (isUser) 0.75f else 0.9f)
                     .clip(
                         RoundedCornerShape(
                             topStart = 16.dp,

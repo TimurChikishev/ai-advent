@@ -8,6 +8,7 @@ import com.devchik.ai.feature.ai.domain.AIRepository
 import com.devchik.ai.feature.ai.domain.model.AIMessage
 import com.devchik.ai.feature.settings.domain.SettingsRepository
 import io.ktor.client.HttpClient
+import io.ktor.client.plugins.timeout
 import io.ktor.client.request.header
 import io.ktor.client.request.preparePost
 import io.ktor.client.request.setBody
@@ -40,6 +41,10 @@ class AIRepositoryImpl(
         }
 
         httpClient.preparePost("$BASE_URL/chat/completions") {
+            timeout {
+                requestTimeoutMillis = Long.MAX_VALUE
+                socketTimeoutMillis = Long.MAX_VALUE
+            }
             contentType(ContentType.Application.Json)
             header(HttpHeaders.Authorization, "Bearer ${BuildKonfig.DEEPSEEK_API_KEY}")
             setBody(
