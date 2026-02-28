@@ -15,6 +15,7 @@ fun initKoin(
             networkModule,
             settingsModule,
             featureAiModule,
+            featureComparisonModule,
         )
     }
 }

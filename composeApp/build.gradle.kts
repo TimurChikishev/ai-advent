@@ -131,5 +131,10 @@ buildkonfig {
             "DEEPSEEK_API_KEY",
             localProperties.getProperty("DEEPSEEK_API_KEY", ""),
         )
+        buildConfigField(
+            STRING,
+            "QWEN_API_KEY",
+            localProperties.getProperty("QWEN_API_KEY", ""),
+        )
     }
 }
