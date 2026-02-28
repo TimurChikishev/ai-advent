@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun MenuScreen(
     onOpenChat: () -> Unit,
+    onOpenComparison: () -> Unit,
 ) {
     Scaffold(
         topBar = {
@@ -69,6 +70,20 @@ fun MenuScreen(
             ) {
                 Text(
                     text = "Открыть чат",
+                    style = MaterialTheme.typography.titleMedium,
+                )
+            }
+
+            Spacer(Modifier.height(12.dp))
+
+            Button(
+                onClick = onOpenComparison,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp),
+            ) {
+                Text(
+                    text = "⚖️ Сравнить модели",
                     style = MaterialTheme.typography.titleMedium,
                 )
             }
