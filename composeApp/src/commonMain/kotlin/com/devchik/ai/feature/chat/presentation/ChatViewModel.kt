@@ -3,6 +3,9 @@ package com.devchik.ai.feature.chat.presentation
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.devchik.ai.feature.chat.agent.ChatAgentProvider
+import com.devchik.ai.feature.chat.domain.model.ChatMessageItem
+import com.devchik.ai.feature.chat.domain.usecase.LoadChatHistoryUseCase
+import com.devchik.ai.feature.chat.domain.usecase.SendMessageUseCase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -14,6 +17,9 @@ import kotlinx.coroutines.withContext
 
 class ChatViewModel(
     private val chatAgentProvider: ChatAgentProvider,
+    private val loadChatHistoryUseCase: LoadChatHistoryUseCase,
+    private val sendMessageUseCase: SendMessageUseCase,
+    private val sessionId: String,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(
@@ -24,6 +30,43 @@ class ChatViewModel(
     )
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
 
+    init {
+        loadHistory()
+    }
+
+    private fun loadHistory() {
+        viewModelScope.launch {
+            val history = loadChatHistoryUseCase(sessionId)
+            if (history.isNotEmpty()) {
+                val uiMessages = mutableListOf<ChatMessage>()
+                uiMessages.add(ChatMessage.SystemMessage(chatAgentProvider.description))
+                var chatEnded = false
+                for (item in history) {
+                    when (item) {
+                        is ChatMessageItem.User -> uiMessages.add(ChatMessage.UserMessage(item.content))
+                        is ChatMessageItem.Assistant -> uiMessages.add(ChatMessage.AgentMessage(item.content))
+                        is ChatMessageItem.System -> {
+                            uiMessages.add(ChatMessage.SystemMessage(item.content))
+                            if (item.content == CHAT_ENDED_MARKER) chatEnded = true
+                        }
+                        is ChatMessageItem.Error -> uiMessages.add(ChatMessage.ErrorMessage(item.content))
+                    }
+                }
+                _uiState.update {
+                    it.copy(
+                        messages = uiMessages,
+                        isChatEnded = chatEnded,
+                        isInputEnabled = !chatEnded,
+                    )
+                }
+            }
+        }
+    }
+
+    companion object {
+        const val CHAT_ENDED_MARKER = "Агент завершил работу."
+    }
+
     fun updateInputText(text: String) {
         _uiState.update { it.copy(inputText = text) }
     }
@@ -31,6 +74,10 @@ class ChatViewModel(
     fun sendMessage() {
         val userInput = _uiState.value.inputText.trim()
         if (userInput.isEmpty()) return
+
+        viewModelScope.launch {
+            sendMessageUseCase.saveUserMessage(sessionId, userInput)
+        }
 
         if (_uiState.value.userResponseRequested) {
             _uiState.update {
@@ -73,13 +120,16 @@ class ChatViewModel(
                 val agent = chatAgentProvider.provideAgent(
                     onToolCallEvent = { message ->
                         viewModelScope.launch {
+                            val text = "🔧 $message"
+                            sendMessageUseCase.saveSystemMessage(sessionId, text)
                             _uiState.update {
-                                it.copy(messages = it.messages + ChatMessage.SystemMessage("🔧 $message"))
+                                it.copy(messages = it.messages + ChatMessage.SystemMessage(text))
                             }
                         }
                     },
                     onErrorEvent = { errorMessage ->
                         viewModelScope.launch {
+                            sendMessageUseCase.saveErrorMessage(sessionId, errorMessage)
                             _uiState.update {
                                 it.copy(
                                     messages = it.messages + ChatMessage.ErrorMessage(errorMessage),
@@ -92,6 +142,8 @@ class ChatViewModel(
                     onAssistantMessage = { message ->
                         val streamedContent = _uiState.value.streamingContent
                         val displayMessage = streamedContent.ifEmpty { message }
+
+                        sendMessageUseCase.saveAssistantMessage(sessionId, displayMessage)
 
                         _uiState.update {
                             it.copy(
@@ -119,22 +171,29 @@ class ChatViewModel(
                     },
                 )
 
-                val result = agent.run(userInput)
+                val result = agent.run(userInput, sessionId)
+
+                val resultText = "✅ Результат: $result"
+                val doneText = "Агент завершил работу."
+                sendMessageUseCase.saveSystemMessage(sessionId, resultText)
+                sendMessageUseCase.saveSystemMessage(sessionId, doneText)
 
                 _uiState.update {
                     it.copy(
                         messages = it.messages +
-                            ChatMessage.SystemMessage("✅ Результат: $result") +
-                            ChatMessage.SystemMessage("Агент завершил работу."),
+                            ChatMessage.SystemMessage(resultText) +
+                            ChatMessage.SystemMessage(doneText),
                         isInputEnabled = false,
                         isLoading = false,
                         isChatEnded = true,
                     )
                 }
             } catch (e: Exception) {
+                val errorText = "Ошибка: ${e.message}"
+                sendMessageUseCase.saveErrorMessage(sessionId, errorText)
                 _uiState.update {
                     it.copy(
-                        messages = it.messages + ChatMessage.ErrorMessage("Ошибка: ${e.message}"),
+                        messages = it.messages + ChatMessage.ErrorMessage(errorText),
                         isInputEnabled = true,
                         isLoading = false,
                     )

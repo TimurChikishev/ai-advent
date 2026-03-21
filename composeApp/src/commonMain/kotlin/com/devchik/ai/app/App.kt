@@ -9,6 +9,8 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import com.devchik.ai.feature.ai.presentation.AIScreen
 import com.devchik.ai.feature.chat.presentation.ChatScreen
+import com.devchik.ai.feature.chat.presentation.ChatViewModel
+import com.devchik.ai.feature.chat.presentation.SessionListScreen
 import com.devchik.ai.feature.comparison.presentation.ComparisonDetailScreen
 import com.devchik.ai.feature.comparison.presentation.ComparisonScreen
 import com.devchik.ai.feature.comparison.presentation.ComparisonViewModel
@@ -16,6 +18,7 @@ import com.devchik.ai.feature.menu.presentation.MenuScreen
 import com.devchik.ai.feature.settings.presentation.SettingsScreen
 import kotlinx.serialization.Serializable
 import org.koin.compose.viewmodel.koinViewModel
+import org.koin.core.parameter.parametersOf
 
 @Serializable
 object MenuRoute
@@ -28,6 +31,9 @@ object SettingsRoute
 
 @Serializable
 object KoogChatRoute
+
+@Serializable
+data class KoogChatSessionRoute(val sessionId: String)
 
 @Serializable
 object ComparisonRoute
@@ -54,8 +60,22 @@ fun App() {
                 )
             }
             composable<KoogChatRoute> {
+                SessionListScreen(
+                    onBack = { navController.popBackStack() },
+                    onOpenSession = { sessionId ->
+                        navController.navigate(KoogChatSessionRoute(sessionId))
+                    },
+                )
+            }
+            composable<KoogChatSessionRoute> { backStackEntry ->
+                val route = backStackEntry.toRoute<KoogChatSessionRoute>()
+                val viewModel = koinViewModel<ChatViewModel>(
+                    viewModelStoreOwner = backStackEntry,
+                    parameters = { parametersOf(route.sessionId) },
+                )
                 ChatScreen(
                     onBack = { navController.popBackStack() },
+                    viewModel = viewModel,
                 )
             }
             composable<SettingsRoute> {

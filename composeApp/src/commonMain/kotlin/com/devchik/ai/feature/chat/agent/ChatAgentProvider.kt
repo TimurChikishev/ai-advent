@@ -1,5 +1,7 @@
 package com.devchik.ai.feature.chat.agent
 
+import ai.koog.agents.chatMemory.feature.ChatHistoryProvider
+import ai.koog.agents.chatMemory.feature.ChatMemory
 import ai.koog.agents.core.agent.AIAgent
 import ai.koog.agents.core.agent.config.AIAgentConfig
 import ai.koog.agents.core.dsl.builder.forwardTo
@@ -21,6 +23,7 @@ import ai.koog.prompt.streaming.StreamFrame
 
 class ChatAgentProvider(
     private val apiKey: String,
+    private val chatHistoryProvider: ChatHistoryProvider,
 ) {
     val title: String = "Koog Chat"
     val description: String = "Привет! Я AI-агент на базе Koog + DeepSeek. Задайте мне вопрос."
@@ -117,6 +120,11 @@ class ChatAgentProvider(
             agentConfig = agentConfig,
             toolRegistry = toolRegistry,
         ) {
+            install(ChatMemory) {
+                chatHistoryProvider = this@ChatAgentProvider.chatHistoryProvider
+                windowSize(50)
+            }
+
             handleEvents {
                 onToolCallStarting { ctx ->
                     onToolCallEvent("Tool ${ctx.toolName}, args ${ctx.toolArgs}")
