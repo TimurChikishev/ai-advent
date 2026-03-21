@@ -8,6 +8,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import com.devchik.ai.feature.ai.presentation.AIScreen
+import com.devchik.ai.feature.chat.presentation.ChatScreen
 import com.devchik.ai.feature.comparison.presentation.ComparisonDetailScreen
 import com.devchik.ai.feature.comparison.presentation.ComparisonScreen
 import com.devchik.ai.feature.comparison.presentation.ComparisonViewModel
@@ -26,6 +27,9 @@ object ChatRoute
 object SettingsRoute
 
 @Serializable
+object KoogChatRoute
+
+@Serializable
 object ComparisonRoute
 
 @Serializable
@@ -40,12 +44,18 @@ fun App() {
             composable<MenuRoute> {
                 MenuScreen(
                     onOpenChat = { navController.navigate(ChatRoute) },
+                    onOpenKoogChat = { navController.navigate(KoogChatRoute) },
                     onOpenComparison = { navController.navigate(ComparisonRoute) },
                 )
             }
             composable<ChatRoute> {
                 AIScreen(
                     onOpenSettings = { navController.navigate(SettingsRoute) },
+                )
+            }
+            composable<KoogChatRoute> {
+                ChatScreen(
+                    onBack = { navController.popBackStack() },
                 )
             }
             composable<SettingsRoute> {

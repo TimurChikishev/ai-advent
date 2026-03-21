@@ -1,4 +1,4 @@
-package com.devchik.ai.di
+package com.devchik.ai.di.core
 
 import com.devchik.ai.core.network.createHttpClient
 import io.ktor.client.plugins.HttpTimeout
@@ -7,7 +7,7 @@ import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
 import org.koin.dsl.module
 
-val networkModule = module {
+val coreNetworkModule = module {
     single {
         createHttpClient().config {
             install(ContentNegotiation) {

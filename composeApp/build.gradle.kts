@@ -64,6 +64,8 @@ kotlin {
             implementation(libs.markdown.renderer)
             implementation(libs.markdown.renderer.m3)
             implementation(libs.markdown.renderer.code)
+            implementation(libs.koog.agents)
+            implementation(libs.koog.agents.features.memory)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)
