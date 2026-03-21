@@ -1,7 +1,7 @@
 [versions]
 agp = "8.11.2"
 android-compileSdk = "36"
-android-minSdk = "24"
+android-minSdk = "26"
 android-targetSdk = "36"
 androidx-activity = "1.12.2"
 androidx-appcompat = "1.7.1"
@@ -21,6 +21,7 @@ buildkonfig = "0.17.1"
 datastore = "1.2.0"
 markdown-renderer = "0.39.2"
 navigation-compose = "2.9.2"
+koog = "0.7.2"
 
 [libraries]
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
@@ -55,6 +56,8 @@ navigation-compose = { module = "org.jetbrains.androidx.navigation:navigation-co
 markdown-renderer = { module = "com.mikepenz:multiplatform-markdown-renderer", version.ref = "markdown-renderer" }
 markdown-renderer-m3 = { module = "com.mikepenz:multiplatform-markdown-renderer-m3", version.ref = "markdown-renderer" }
 markdown-renderer-code = { module = "com.mikepenz:multiplatform-markdown-renderer-code", version.ref = "markdown-renderer" }
+koog-agents = { module = "ai.koog:koog-agents", version.ref = "koog" }
+koog-agents-features-memory = { module = "ai.koog:agents-features-memory", version.ref = "koog" }
 
 [plugins]
 androidApplication = { id = "com.android.application", version.ref = "agp" }

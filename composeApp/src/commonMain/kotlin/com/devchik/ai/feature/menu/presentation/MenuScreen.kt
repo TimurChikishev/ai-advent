@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun MenuScreen(
     onOpenChat: () -> Unit,
+    onOpenKoogChat: () -> Unit,
     onOpenComparison: () -> Unit,
 ) {
     Scaffold(
@@ -70,6 +71,20 @@ fun MenuScreen(
             ) {
                 Text(
                     text = "Открыть чат",
+                    style = MaterialTheme.typography.titleMedium,
+                )
+            }
+
+            Spacer(Modifier.height(12.dp))
+
+            Button(
+                onClick = onOpenKoogChat,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp),
+            ) {
+                Text(
+                    text = "🧠 Koog Agent Chat",
                     style = MaterialTheme.typography.titleMedium,
                 )
             }

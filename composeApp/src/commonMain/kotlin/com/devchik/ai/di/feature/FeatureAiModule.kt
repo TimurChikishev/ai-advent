@@ -1,4 +1,4 @@
-package com.devchik.ai.di
+package com.devchik.ai.di.feature
 
 import com.devchik.ai.feature.ai.data.AIRepositoryImpl
 import com.devchik.ai.feature.ai.domain.AIRepository

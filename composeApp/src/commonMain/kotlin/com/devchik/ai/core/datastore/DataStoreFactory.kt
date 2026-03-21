@@ -12,5 +12,3 @@ fun createDataStore(producePath: () -> String): DataStore<Preferences> =
     PreferenceDataStoreFactory.createWithPath(
         produceFile = { producePath().toPath() }
     )
-
-expect fun createDataStore(): DataStore<Preferences>
