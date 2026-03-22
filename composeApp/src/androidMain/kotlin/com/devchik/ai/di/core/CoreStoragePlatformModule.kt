@@ -20,6 +20,7 @@ actual val coreStoragePlatformModule = module {
             context = androidContext(),
             name = androidContext().getDatabasePath(AppDatabase.DATABASE_NAME).absolutePath,
         )
+            .fallbackToDestructiveMigration(dropAllTables = true)
             .setDriver(BundledSQLiteDriver())
             .build()
     }

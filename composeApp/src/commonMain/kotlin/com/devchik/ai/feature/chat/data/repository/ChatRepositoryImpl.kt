@@ -10,6 +10,7 @@ import com.devchik.ai.core.database.entity.ChatSessionEntity
 import com.devchik.ai.feature.chat.data.RoomChatHistoryProvider
 import com.devchik.ai.feature.chat.domain.model.ChatMessageItem
 import com.devchik.ai.feature.chat.domain.model.ChatSession
+import com.devchik.ai.feature.chat.domain.model.TokenUsage
 import com.devchik.ai.feature.chat.domain.repository.ChatRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -63,7 +64,16 @@ class ChatRepositoryImpl(
             if (entity.content.isBlank()) return@mapNotNull null
             when (entity.role) {
                 RoomChatHistoryProvider.ROLE_USER -> ChatMessageItem.User(entity.content)
-                RoomChatHistoryProvider.ROLE_ASSISTANT -> ChatMessageItem.Assistant(entity.content)
+                RoomChatHistoryProvider.ROLE_ASSISTANT -> {
+                    val tokenUsage = if (entity.totalTokens != null && entity.totalTokens > 0) {
+                        TokenUsage(
+                            inputTokens = entity.inputTokens ?: 0,
+                            outputTokens = entity.outputTokens ?: 0,
+                            totalTokens = entity.totalTokens,
+                        )
+                    } else null
+                    ChatMessageItem.Assistant(entity.content, tokenUsage)
+                }
                 RoomChatHistoryProvider.ROLE_SYSTEM -> ChatMessageItem.System(entity.content)
                 RoomChatHistoryProvider.ROLE_ERROR -> ChatMessageItem.Error(entity.content)
                 else -> null
@@ -78,10 +88,17 @@ class ChatRepositoryImpl(
         )
     }
 
-    override suspend fun appendAssistantMessage(sessionId: String, content: String) {
-        chatHistoryProvider.appendMessage(
-            sessionId,
-            Message.Assistant(content = content, metaInfo = ResponseMetaInfo.Empty),
+    override suspend fun appendAssistantMessage(sessionId: String, content: String, tokenUsage: TokenUsage?) {
+        chatHistoryProvider.appendRawEntity(
+            ChatMessageEntity(
+                sessionId = sessionId,
+                role = RoomChatHistoryProvider.ROLE_ASSISTANT,
+                content = content,
+                timestamp = 0,
+                inputTokens = tokenUsage?.inputTokens,
+                outputTokens = tokenUsage?.outputTokens,
+                totalTokens = tokenUsage?.totalTokens,
+            )
         )
     }
 

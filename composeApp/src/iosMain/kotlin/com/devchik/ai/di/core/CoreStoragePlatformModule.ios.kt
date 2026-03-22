@@ -39,6 +39,7 @@ actual val coreStoragePlatformModule: Module = module {
         )
         val dbPath = requireNotNull(documentDirectory).path + "/${AppDatabase.DATABASE_NAME}"
         Room.databaseBuilder<AppDatabase>(name = dbPath)
+            .fallbackToDestructiveMigration(dropAllTables = true)
             .setDriver(BundledSQLiteDriver())
             .build()
     }

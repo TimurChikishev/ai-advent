@@ -66,7 +66,20 @@ fun ChatScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(uiState.title) },
+                title = {
+                    Column {
+                        Text(uiState.title)
+                        if (uiState.sessionTotalTokens.totalTokens > 0) {
+                            Text(
+                                text = "Tokens: ${uiState.sessionTotalTokens.totalTokens} " +
+                                    "(in: ${uiState.sessionTotalTokens.inputTokens}, " +
+                                    "out: ${uiState.sessionTotalTokens.outputTokens})",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Text("←", style = MaterialTheme.typography.titleLarge)
@@ -94,7 +107,7 @@ fun ChatScreen(
                 items(uiState.messages) { message ->
                     when (message) {
                         is ChatMessage.UserMessage -> UserBubble(message.text)
-                        is ChatMessage.AgentMessage -> AgentBubble(message.text)
+                        is ChatMessage.AgentMessage -> AgentBubble(message.text, message.tokenUsage)
                         is ChatMessage.SystemMessage -> SystemBubble(message.text)
                         is ChatMessage.ErrorMessage -> ErrorBubble(message.text)
                     }
@@ -170,51 +183,64 @@ private fun UserBubble(text: String) {
 }
 
 @Composable
-private fun AgentBubble(text: String) {
+private fun AgentBubble(text: String, tokenUsage: TokenUsageInfo? = null) {
     val textColor = MaterialTheme.colorScheme.onSurfaceVariant
 
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.Start,
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth(0.9f)
-                .clip(
-                    RoundedCornerShape(
-                        topStart = 16.dp, topEnd = 16.dp,
-                        bottomStart = 4.dp, bottomEnd = 16.dp,
-                    )
-                )
-                .background(MaterialTheme.colorScheme.surfaceVariant)
-                .padding(12.dp),
+        Column(
+            modifier = Modifier.fillMaxWidth(0.9f),
         ) {
-            val selectionColors = TextSelectionColors(
-                handleColor = MaterialTheme.colorScheme.primary,
-                backgroundColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f),
-            )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(
+                        RoundedCornerShape(
+                            topStart = 16.dp, topEnd = 16.dp,
+                            bottomStart = 4.dp, bottomEnd = 16.dp,
+                        )
+                    )
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .padding(12.dp),
+            ) {
+                val selectionColors = TextSelectionColors(
+                    handleColor = MaterialTheme.colorScheme.primary,
+                    backgroundColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f),
+                )
 
-            CompositionLocalProvider(LocalTextSelectionColors provides selectionColors) {
-                SelectionContainer {
-                    val markdownState = rememberMarkdownState(
-                        content = text,
-                        immediate = true,
-                    )
-                    Markdown(
-                        markdownState = markdownState,
-                        colors = markdownColor(
-                            text = textColor,
-                            codeBackground = MaterialTheme.colorScheme.surfaceVariant
-                                .copy(alpha = 0.5f),
-                            inlineCodeBackground = MaterialTheme.colorScheme.surfaceVariant
-                                .copy(alpha = 0.5f),
-                            dividerColor = textColor.copy(alpha = 0.3f),
-                        ),
-                        typography = markdownTypography(
-                            paragraph = MaterialTheme.typography.bodyLarge,
-                        ),
-                    )
+                CompositionLocalProvider(LocalTextSelectionColors provides selectionColors) {
+                    SelectionContainer {
+                        val markdownState = rememberMarkdownState(
+                            content = text,
+                            immediate = true,
+                        )
+                        Markdown(
+                            markdownState = markdownState,
+                            colors = markdownColor(
+                                text = textColor,
+                                codeBackground = MaterialTheme.colorScheme.surfaceVariant
+                                    .copy(alpha = 0.5f),
+                                inlineCodeBackground = MaterialTheme.colorScheme.surfaceVariant
+                                    .copy(alpha = 0.5f),
+                                dividerColor = textColor.copy(alpha = 0.3f),
+                            ),
+                            typography = markdownTypography(
+                                paragraph = MaterialTheme.typography.bodyLarge,
+                            ),
+                        )
+                    }
                 }
+            }
+            if (tokenUsage != null && tokenUsage.totalTokens > 0) {
+                Text(
+                    text = "Tokens: ${tokenUsage.totalTokens} " +
+                        "(in: ${tokenUsage.inputTokens}, out: ${tokenUsage.outputTokens})",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                    modifier = Modifier.padding(start = 8.dp, top = 2.dp),
+                )
             }
         }
     }

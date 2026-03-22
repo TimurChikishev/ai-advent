@@ -28,11 +28,18 @@ class ChatAgentProvider(
     val title: String = "Koog Chat"
     val description: String = "Привет! Я AI-агент на базе Koog + DeepSeek. Задайте мне вопрос."
 
+    data class TokenUsage(
+        val inputTokens: Int,
+        val outputTokens: Int,
+        val totalTokens: Int,
+    )
+
     suspend fun provideAgent(
         onToolCallEvent: suspend (String) -> Unit,
         onErrorEvent: suspend (String) -> Unit,
         onAssistantMessage: suspend (String) -> String,
         onStreamingDelta: suspend (String) -> Unit,
+        onTokenUsage: suspend (TokenUsage) -> Unit = {},
     ): AIAgent<String, String> {
         val llmClient = DeepSeekLLMClient(apiKey)
         val executor = MultiLLMPromptExecutor(llmClient)
@@ -131,8 +138,18 @@ class ChatAgentProvider(
                 }
 
                 onLLMStreamingFrameReceived { ctx ->
-                    (ctx.streamFrame as? StreamFrame.TextDelta)?.let { frame ->
-                        onStreamingDelta(frame.text)
+                    when (val frame = ctx.streamFrame) {
+                        is StreamFrame.TextDelta -> onStreamingDelta(frame.text)
+                        is StreamFrame.End -> {
+                            val meta = frame.metaInfo
+                            val input = meta.inputTokensCount ?: 0
+                            val output = meta.outputTokensCount ?: 0
+                            val total = meta.totalTokensCount ?: (input + output)
+                            if (input > 0 || output > 0 || total > 0) {
+                                onTokenUsage(TokenUsage(input, output, total))
+                            }
+                        }
+                        else -> Unit
                     }
                 }
 
