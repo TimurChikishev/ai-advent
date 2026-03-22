@@ -27,4 +27,7 @@ data class ChatMessageEntity(
     val toolName: String? = null,
     val toolArgs: String? = null,
     val timestamp: Long,
+    val inputTokens: Int? = null,
+    val outputTokens: Int? = null,
+    val totalTokens: Int? = null,
 )

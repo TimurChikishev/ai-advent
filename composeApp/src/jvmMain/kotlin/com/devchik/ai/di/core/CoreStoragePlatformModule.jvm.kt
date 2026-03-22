@@ -22,6 +22,7 @@ actual val coreStoragePlatformModule: Module = module {
         val dbFile = File(System.getProperty("user.home"), ".ai/${AppDatabase.DATABASE_NAME}")
         dbFile.parentFile?.mkdirs()
         Room.databaseBuilder<AppDatabase>(name = dbFile.absolutePath)
+            .fallbackToDestructiveMigration(dropAllTables = true)
             .setDriver(BundledSQLiteDriver())
             .build()
     }

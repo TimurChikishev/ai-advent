@@ -1,5 +1,6 @@
 package com.devchik.ai.feature.chat.domain.usecase
 
+import com.devchik.ai.feature.chat.domain.model.TokenUsage
 import com.devchik.ai.feature.chat.domain.repository.ChatRepository
 
 class SendMessageUseCase(
@@ -9,8 +10,8 @@ class SendMessageUseCase(
         repository.appendUserMessage(sessionId, content)
     }
 
-    suspend fun saveAssistantMessage(sessionId: String, content: String) {
-        repository.appendAssistantMessage(sessionId, content)
+    suspend fun saveAssistantMessage(sessionId: String, content: String, tokenUsage: TokenUsage? = null) {
+        repository.appendAssistantMessage(sessionId, content, tokenUsage)
     }
 
     suspend fun saveSystemMessage(sessionId: String, content: String) {

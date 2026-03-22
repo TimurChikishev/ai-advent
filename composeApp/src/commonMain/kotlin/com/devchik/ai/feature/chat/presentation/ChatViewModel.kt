@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.devchik.ai.feature.chat.agent.ChatAgentProvider
 import com.devchik.ai.feature.chat.domain.model.ChatMessageItem
+import com.devchik.ai.feature.chat.domain.model.TokenUsage
 import com.devchik.ai.feature.chat.domain.usecase.LoadChatHistoryUseCase
 import com.devchik.ai.feature.chat.domain.usecase.SendMessageUseCase
 import kotlinx.coroutines.Dispatchers
@@ -41,10 +42,21 @@ class ChatViewModel(
                 val uiMessages = mutableListOf<ChatMessage>()
                 uiMessages.add(ChatMessage.SystemMessage(chatAgentProvider.description))
                 var chatEnded = false
+                var totalInput = 0
+                var totalOutput = 0
+                var totalAll = 0
                 for (item in history) {
                     when (item) {
                         is ChatMessageItem.User -> uiMessages.add(ChatMessage.UserMessage(item.content))
-                        is ChatMessageItem.Assistant -> uiMessages.add(ChatMessage.AgentMessage(item.content))
+                        is ChatMessageItem.Assistant -> {
+                            val tokenInfo = item.tokenUsage?.let {
+                                totalInput += it.inputTokens
+                                totalOutput += it.outputTokens
+                                totalAll += it.totalTokens
+                                TokenUsageInfo(it.inputTokens, it.outputTokens, it.totalTokens)
+                            }
+                            uiMessages.add(ChatMessage.AgentMessage(item.content, tokenInfo))
+                        }
                         is ChatMessageItem.System -> {
                             uiMessages.add(ChatMessage.SystemMessage(item.content))
                             if (item.content == CHAT_ENDED_MARKER) chatEnded = true
@@ -57,6 +69,7 @@ class ChatViewModel(
                         messages = uiMessages,
                         isChatEnded = chatEnded,
                         isInputEnabled = !chatEnded,
+                        sessionTotalTokens = TokenUsageInfo(totalInput, totalOutput, totalAll),
                     )
                 }
             }
@@ -117,6 +130,8 @@ class ChatViewModel(
     private suspend fun runAgent(userInput: String) {
         withContext(Dispatchers.Default) {
             try {
+                var pendingTokenUsage: TokenUsageInfo? = null
+
                 val agent = chatAgentProvider.provideAgent(
                     onToolCallEvent = { message ->
                         viewModelScope.launch {
@@ -142,16 +157,34 @@ class ChatViewModel(
                     onAssistantMessage = { message ->
                         val streamedContent = _uiState.value.streamingContent
                         val displayMessage = streamedContent.ifEmpty { message }
+                        val tokenUsage = pendingTokenUsage
+                        pendingTokenUsage = null
 
-                        sendMessageUseCase.saveAssistantMessage(sessionId, displayMessage)
+                        val domainTokenUsage = tokenUsage?.let {
+                            TokenUsage(it.inputTokens, it.outputTokens, it.totalTokens)
+                        }
+                        sendMessageUseCase.saveAssistantMessage(sessionId, displayMessage, domainTokenUsage)
 
-                        _uiState.update {
-                            it.copy(
-                                messages = it.messages + ChatMessage.AgentMessage(displayMessage),
+                        _uiState.update { state ->
+                            val newSessionTokens = if (tokenUsage != null) {
+                                TokenUsageInfo(
+                                    inputTokens = state.sessionTotalTokens.inputTokens + tokenUsage.inputTokens,
+                                    outputTokens = state.sessionTotalTokens.outputTokens + tokenUsage.outputTokens,
+                                    totalTokens = state.sessionTotalTokens.totalTokens + tokenUsage.totalTokens,
+                                )
+                            } else state.sessionTotalTokens
+
+                            state.copy(
+                                messages = state.messages + ChatMessage.AgentMessage(
+                                    text = displayMessage,
+                                    tokenUsage = tokenUsage,
+                                ),
                                 streamingContent = "",
                                 isInputEnabled = true,
                                 isLoading = false,
                                 userResponseRequested = true,
+                                lastRequestTokens = tokenUsage,
+                                sessionTotalTokens = newSessionTokens,
                             )
                         }
 
@@ -168,6 +201,13 @@ class ChatViewModel(
                         _uiState.update {
                             it.copy(streamingContent = it.streamingContent + chunk)
                         }
+                    },
+                    onTokenUsage = { usage ->
+                        pendingTokenUsage = TokenUsageInfo(
+                            inputTokens = usage.inputTokens,
+                            outputTokens = usage.outputTokens,
+                            totalTokens = usage.totalTokens,
+                        )
                     },
                 )
 
