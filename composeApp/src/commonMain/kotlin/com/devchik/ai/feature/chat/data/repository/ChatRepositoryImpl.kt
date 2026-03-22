@@ -11,9 +11,11 @@ import com.devchik.ai.feature.chat.data.ContextManager
 import com.devchik.ai.feature.chat.data.RoomChatHistoryProvider
 import com.devchik.ai.feature.chat.domain.model.ChatMessageItem
 import com.devchik.ai.feature.chat.domain.model.ChatSession
+import com.devchik.ai.feature.chat.domain.model.ContextStrategy
 import com.devchik.ai.feature.chat.domain.model.TokenUsage
 import com.devchik.ai.feature.chat.domain.repository.ChatRepository
 import com.devchik.ai.feature.chat.domain.repository.ContextStats
+import com.devchik.ai.feature.chat.domain.repository.SessionContextSettings
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlin.time.Clock
@@ -50,6 +52,7 @@ class ChatRepositoryImpl(
                     title = entity.title,
                     lastMessage = lastUserOrAssistant?.content?.take(100).orEmpty(),
                     updatedAt = entity.updatedAt,
+                    parentSessionId = entity.parentSessionId,
                 )
             }
         }
@@ -147,12 +150,94 @@ class ChatRepositoryImpl(
     }
 
     override suspend fun getContextStats(sessionId: String): ContextStats {
-        val stats = contextManager.getSummaryStats(sessionId)
+        val stats = contextManager.getStats(sessionId)
         return ContextStats(
             totalMessages = stats.totalMessages,
-            summarizedMessages = stats.summarizedMessages,
-            summaryCount = stats.summaryCount,
-            isCompressed = stats.isCompressed,
+            contextMessages = stats.contextMessages,
+            strategyLabel = stats.strategyLabel,
+            details = stats.details,
+        )
+    }
+
+    override suspend fun getSessionContextSettings(sessionId: String): SessionContextSettings {
+        val session = chatSessionDao.getSession(sessionId) ?: return SessionContextSettings()
+        return SessionContextSettings(
+            contextStrategy = session.contextStrategy
+                ?.let { name -> ContextStrategy.entries.find { it.name == name } },
+            contextWindowSize = session.contextWindowSize,
+        )
+    }
+
+    override suspend fun updateSessionContextSettings(sessionId: String, settings: SessionContextSettings) {
+        chatSessionDao.updateSessionContextSettings(
+            id = sessionId,
+            strategy = settings.contextStrategy?.name,
+            windowSize = settings.contextWindowSize,
+        )
+    }
+
+    @OptIn(ExperimentalUuidApi::class)
+    override suspend fun createBranch(sourceSessionId: String, title: String): String {
+        val sourceSession = chatSessionDao.getSession(sourceSessionId)
+            ?: throw IllegalArgumentException("Source session not found: $sourceSessionId")
+
+        val allMessages = chatMessageDao.getMessages(sourceSessionId)
+        val lastMessage = allMessages.lastOrNull()
+
+        val branchId = Uuid.random().toString()
+        val now = Clock.System.now().toEpochMilliseconds()
+
+        chatSessionDao.insertSession(
+            ChatSessionEntity(
+                id = branchId,
+                title = title,
+                createdAt = now,
+                updatedAt = now,
+                contextStrategy = sourceSession.contextStrategy,
+                contextWindowSize = sourceSession.contextWindowSize,
+                parentSessionId = sourceSessionId,
+                branchPointMessageId = lastMessage?.id,
+            )
+        )
+
+        if (allMessages.isNotEmpty()) {
+            val copiedMessages = allMessages.map { msg ->
+                msg.copy(id = 0, sessionId = branchId)
+            }
+            chatMessageDao.insertMessages(copiedMessages)
+        }
+
+        return branchId
+    }
+
+    override suspend fun getBranches(sessionId: String): List<ChatSession> {
+        return chatSessionDao.getBranches(sessionId).map { entity ->
+            val messages = chatMessageDao.getMessages(entity.id)
+            val lastUserOrAssistant = messages
+                .lastOrNull { it.role == RoomChatHistoryProvider.ROLE_USER || it.role == RoomChatHistoryProvider.ROLE_ASSISTANT }
+            ChatSession(
+                id = entity.id,
+                title = entity.title,
+                lastMessage = lastUserOrAssistant?.content?.take(100).orEmpty(),
+                updatedAt = entity.updatedAt,
+                parentSessionId = entity.parentSessionId,
+            )
+        }
+    }
+
+    override suspend fun getParentSession(sessionId: String): ChatSession? {
+        val session = chatSessionDao.getSession(sessionId) ?: return null
+        val parentId = session.parentSessionId ?: return null
+        val parent = chatSessionDao.getSession(parentId) ?: return null
+        val messages = chatMessageDao.getMessages(parent.id)
+        val lastUserOrAssistant = messages
+            .lastOrNull { it.role == RoomChatHistoryProvider.ROLE_USER || it.role == RoomChatHistoryProvider.ROLE_ASSISTANT }
+        return ChatSession(
+            id = parent.id,
+            title = parent.title,
+            lastMessage = lastUserOrAssistant?.content?.take(100).orEmpty(),
+            updatedAt = parent.updatedAt,
+            parentSessionId = parent.parentSessionId,
         )
     }
 }

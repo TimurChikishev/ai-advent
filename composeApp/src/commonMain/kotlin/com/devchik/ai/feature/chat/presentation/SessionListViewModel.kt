@@ -22,6 +22,8 @@ data class SessionItem(
     val title: String,
     val lastMessage: String,
     val updatedAt: Long,
+    /** non-null, если сессия является веткой другой сессии */
+    val parentSessionId: String? = null,
 )
 
 /**
@@ -65,4 +67,5 @@ private fun ChatSession.toSessionItem() = SessionItem(
     title = title,
     lastMessage = lastMessage,
     updatedAt = updatedAt,
+    parentSessionId = parentSessionId,
 )

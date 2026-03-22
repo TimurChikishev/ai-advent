@@ -20,4 +20,8 @@ interface ChatMessageDao {
 
     @Query("DELETE FROM chat_messages WHERE sessionId = :sessionId")
     suspend fun deleteMessagesBySession(sessionId: String)
+
+    /** Сообщения до указанного timestamp включительно — для копирования при создании ветки */
+    @Query("SELECT * FROM chat_messages WHERE sessionId = :sessionId AND timestamp <= :maxTimestamp ORDER BY timestamp ASC")
+    suspend fun getMessagesUpTo(sessionId: String, maxTimestamp: Long): List<ChatMessageEntity>
 }

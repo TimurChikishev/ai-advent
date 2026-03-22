@@ -6,6 +6,10 @@ import com.devchik.ai.feature.chat.agent.ChatAgentProvider
 import com.devchik.ai.feature.chat.data.ContextManager
 import com.devchik.ai.feature.chat.data.RoomChatHistoryProvider
 import com.devchik.ai.feature.chat.data.repository.ChatRepositoryImpl
+import com.devchik.ai.feature.chat.data.strategy.BranchingStrategy
+import com.devchik.ai.feature.chat.data.strategy.SlidingWindowStrategy
+import com.devchik.ai.feature.chat.data.strategy.StickyFactsStrategy
+import com.devchik.ai.feature.chat.data.strategy.SummaryStrategy
 import com.devchik.ai.feature.chat.domain.repository.ChatRepository
 import com.devchik.ai.feature.chat.domain.usecase.CreateSessionUseCase
 import com.devchik.ai.feature.chat.domain.usecase.DeleteSessionUseCase
@@ -19,35 +23,74 @@ import org.koin.dsl.bind
 import org.koin.dsl.module
 
 /**
- * Koin DI module for the chat feature. Wires all layers together:
+ * Koin DI модуль для фичи чата. Связывает все слои:
  *
  * Data layer:
- * - Room DAOs (singleton, from AppDatabase)
- * - [RoomChatHistoryProvider] (singleton) — shared between ChatAgentProvider and ChatRepositoryImpl
+ * - Room DAOs (singleton, из AppDatabase)
+ * - Стратегии контекста: [SlidingWindowStrategy], [SummaryStrategy] (singleton)
+ * - [ContextManager] (singleton) — диспетчер стратегий, читает настройки из SettingsRepository
+ * - [RoomChatHistoryProvider] (singleton) — мост между Koog ChatMemory и Room
  * - [ChatRepositoryImpl] bound as [ChatRepository]
  *
  * Agent layer:
- * - [ChatAgentProvider] (singleton) — holds API key, creates agents on demand
+ * - [ChatAgentProvider] (singleton) — создаёт Koog AIAgent по запросу
  *
  * Domain layer:
- * - UseCases (factory — new instance per injection, stateless)
+ * - UseCases (factory — новый экземпляр при каждой инъекции, stateless)
  *
  * Presentation layer:
- * - [ChatViewModel] — scoped per session via Koin params (sessionId)
- * - [SessionListViewModel] — one per screen
+ * - [ChatViewModel] — параметризован sessionId через Koin params
+ * - [SessionListViewModel] — один на экран списка сессий
  */
 val featureChatModule = module {
     // --- Data layer ---
+
+    // Room DAOs — singleton, извлекаются из AppDatabase
     single { get<AppDatabase>().chatSessionDao() }
     single { get<AppDatabase>().chatMessageDao() }
     single { get<AppDatabase>().chatSummaryDao() }
+    single { get<AppDatabase>().stickyFactDao() }
+
+    // Стратегии управления контекстом — каждая singleton
+    single { SlidingWindowStrategy(chatMessageDao = get()) }
     single {
-        ContextManager(
+        SummaryStrategy(
             chatMessageDao = get(),
             chatSummaryDao = get(),
             httpClient = get(),
         )
     }
+    // StickyFactsStrategy: извлекает ключевые факты из диалога через LLM
+    single {
+        StickyFactsStrategy(
+            chatMessageDao = get(),
+            stickyFactDao = get(),
+            httpClient = get(),
+        )
+    }
+    // BranchingStrategy: ветвление диалога, контекст работает как sliding window внутри ветки
+    single {
+        BranchingStrategy(
+            chatMessageDao = get(),
+            chatSessionDao = get(),
+        )
+    }
+
+    // ContextManager — диспетчер стратегий.
+    // Приоритет: per-session настройки (ChatSessionEntity) > глобальные (SettingsRepository).
+    single {
+        ContextManager(
+            settingsRepository = get(),
+            chatSessionDao = get(),
+            slidingWindowStrategy = get(),
+            summaryStrategy = get(),
+            stickyFactsStrategy = get(),
+            branchingStrategy = get(),
+        )
+    }
+
+    // RoomChatHistoryProvider — адаптер для Koog ChatMemory.
+    // load() делегирует в ContextManager для оптимизированного контекста.
     single {
         RoomChatHistoryProvider(
             chatMessageDao = get(),
@@ -55,6 +98,8 @@ val featureChatModule = module {
             contextManager = get(),
         )
     }
+
+    // ChatAgentProvider — фабрика Koog AIAgent с DeepSeek API
     single {
         ChatAgentProvider(
             apiKey = BuildKonfig.DEEPSEEK_API_KEY,
@@ -62,6 +107,7 @@ val featureChatModule = module {
         )
     }
 
+    // ChatRepository — мост между domain и data layer
     single {
         ChatRepositoryImpl(
             chatSessionDao = get(),
@@ -79,7 +125,7 @@ val featureChatModule = module {
     factory { SendMessageUseCase(repository = get()) }
 
     // --- Presentation layer ---
-    // ChatViewModel receives sessionId via Koin parametersOf(sessionId)
+    // ChatViewModel — получает sessionId через Koin parametersOf(sessionId)
     viewModel { params ->
         ChatViewModel(
             chatAgentProvider = get(),

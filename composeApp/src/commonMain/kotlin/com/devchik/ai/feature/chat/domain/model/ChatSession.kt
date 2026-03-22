@@ -7,4 +7,6 @@ data class ChatSession(
     /** Truncated preview of the last user/assistant message (up to 100 chars). */
     val lastMessage: String,
     val updatedAt: Long,
+    /** ID родительской сессии, если это ветка. null = корневая сессия. */
+    val parentSessionId: String? = null,
 )

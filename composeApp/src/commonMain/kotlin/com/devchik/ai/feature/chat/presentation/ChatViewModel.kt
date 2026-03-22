@@ -4,10 +4,14 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.devchik.ai.feature.chat.agent.ChatAgentProvider
 import com.devchik.ai.feature.chat.domain.model.ChatMessageItem
+import com.devchik.ai.feature.chat.domain.model.ContextStrategy
 import com.devchik.ai.feature.chat.domain.model.TokenUsage
+import com.devchik.ai.feature.chat.domain.repository.SessionContextSettings
 import com.devchik.ai.feature.chat.domain.usecase.LoadChatHistoryUseCase
 import com.devchik.ai.feature.chat.domain.usecase.SendMessageUseCase
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -46,6 +50,9 @@ class ChatViewModel(
         )
     )
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
+
+    /** Job агента — хранится для возможности отмены генерации пользователем. */
+    private var agentJob: Job? = null
 
     init {
         loadHistory()
@@ -95,6 +102,23 @@ class ChatViewModel(
                 }
             }
             refreshContextStats()
+            loadSessionContextSettings()
+            loadBranchInfo()
+        }
+    }
+
+    /** Загружает per-session настройки стратегии из БД */
+    private suspend fun loadSessionContextSettings() {
+        try {
+            val settings = loadChatHistoryUseCase.getSessionContextSettings(sessionId)
+            _uiState.update {
+                it.copy(
+                    sessionContextStrategy = settings.contextStrategy,
+                    sessionContextWindowSize = settings.contextWindowSize,
+                )
+            }
+        } catch (_: Exception) {
+            // Non-critical
         }
     }
 
@@ -105,9 +129,9 @@ class ChatViewModel(
                 it.copy(
                     contextStats = ContextStatsInfo(
                         totalMessages = stats.totalMessages,
-                        summarizedMessages = stats.summarizedMessages,
-                        summaryCount = stats.summaryCount,
-                        isCompressed = stats.isCompressed,
+                        contextMessages = stats.contextMessages,
+                        strategyLabel = stats.strategyLabel,
+                        details = stats.details,
                     )
                 )
             }
@@ -122,6 +146,71 @@ class ChatViewModel(
 
     fun updateInputText(text: String) {
         _uiState.update { it.copy(inputText = text) }
+    }
+
+    /** Открыть/закрыть правую панель настроек стратегии */
+    fun toggleContextSettings() {
+        _uiState.update { it.copy(isContextSettingsOpen = !it.isContextSettingsOpen) }
+    }
+
+    fun closeContextSettings() {
+        _uiState.update { it.copy(isContextSettingsOpen = false) }
+    }
+
+    /** Изменить стратегию контекста для текущей сессии и сохранить в БД */
+    fun setSessionContextStrategy(strategy: ContextStrategy?) {
+        _uiState.update { it.copy(sessionContextStrategy = strategy) }
+        saveSessionContextSettings()
+    }
+
+    /** Изменить размер окна контекста для текущей сессии и сохранить в БД */
+    fun setSessionContextWindowSize(size: Int?) {
+        _uiState.update { it.copy(sessionContextWindowSize = size) }
+        saveSessionContextSettings()
+    }
+
+    private fun saveSessionContextSettings() {
+        viewModelScope.launch {
+            val state = _uiState.value
+            loadChatHistoryUseCase.updateSessionContextSettings(
+                sessionId,
+                SessionContextSettings(
+                    contextStrategy = state.sessionContextStrategy,
+                    contextWindowSize = state.sessionContextWindowSize,
+                ),
+            )
+            refreshContextStats()
+        }
+    }
+
+    /** Загружает ветки текущей сессии и информацию о родителе (если текущая — ветка) */
+    private suspend fun loadBranchInfo() {
+        try {
+            val branches = loadChatHistoryUseCase.getBranches(sessionId)
+            val parent = loadChatHistoryUseCase.getParentSession(sessionId)
+            _uiState.update {
+                it.copy(
+                    branches = branches.map { s -> BranchInfo(sessionId = s.id, title = s.title) },
+                    parentBranch = parent?.let { p -> BranchInfo(sessionId = p.id, title = p.title) },
+                )
+            }
+        } catch (_: Exception) { }
+    }
+
+    /**
+     * Создаёт ветку от текущего момента диалога.
+     * Возвращает sessionId новой ветки для навигации.
+     */
+    fun createBranch(onBranchCreated: (String) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val branchCount = _uiState.value.branches.size + 1
+                val title = "${_uiState.value.title} — Branch $branchCount"
+                val branchSessionId = loadChatHistoryUseCase.createBranch(sessionId, title)
+                loadBranchInfo()
+                onBranchCreated(branchSessionId)
+            } catch (_: Exception) { }
+        }
     }
 
     /**
@@ -158,7 +247,7 @@ class ChatViewModel(
                 )
             }
 
-            viewModelScope.launch {
+            agentJob = viewModelScope.launch {
                 runAgent(userInput)
             }
         }
@@ -174,18 +263,56 @@ class ChatViewModel(
     }
 
     /**
-     * Creates and runs the Koog agent for this session.
+     * Останавливает текущую генерацию ответа.
      *
-     * The agent loop:
-     * 1. Agent sends user input to LLM via streaming.
-     * 2. LLM response arrives as StreamFrame chunks → onStreamingDelta updates streamingContent.
-     * 3. After full response, onTokenUsage fires (from StreamFrame.End) → stored in pendingTokenUsage.
-     * 4. onAssistantMessage fires with complete text → saves to DB with token usage,
-     *    updates UI, then suspends until user provides next input via currentUserResponse.
-     * 5. If LLM calls ExitTool, agent.run() returns and we mark chat as ended.
+     * Отменяет Job агента и сохраняет накопленный streaming-контент как частичное
+     * сообщение ассистента. UI возвращается в состояние готовности ввода.
+     * Если streaming-контента нет (агент ещё не начал отвечать), сохраняется
+     * системное сообщение о прерванной генерации.
+     */
+    fun stopGeneration() {
+        agentJob?.cancel()
+        agentJob = null
+
+        val partialContent = _uiState.value.streamingContent
+
+        viewModelScope.launch {
+            if (partialContent.isNotBlank()) {
+                sendMessageUseCase.saveAssistantMessage(sessionId, partialContent, null)
+            }
+            val stopText = "⏹ Генерация остановлена"
+            sendMessageUseCase.saveSystemMessage(sessionId, stopText)
+
+            _uiState.update { state ->
+                val newMessages = state.messages.toMutableList()
+                if (partialContent.isNotBlank()) {
+                    newMessages.add(ChatMessage.AgentMessage(text = partialContent))
+                }
+                newMessages.add(ChatMessage.SystemMessage(stopText))
+
+                state.copy(
+                    messages = newMessages,
+                    streamingContent = "",
+                    isInputEnabled = true,
+                    isLoading = false,
+                    userResponseRequested = false,
+                )
+            }
+            refreshContextStats()
+        }
+    }
+
+    /**
+     * Создаёт и запускает Koog-агента для текущей сессии.
      *
-     * Token flow: onTokenUsage fires *before* onAssistantMessage for the same response,
-     * so we buffer in pendingTokenUsage and consume it when saving the assistant message.
+     * Цикл агента (бесконечный, пока пользователь не остановит):
+     * 1. Agent отправляет ввод пользователя в LLM через streaming.
+     * 2. Ответ LLM приходит чанками StreamFrame → onStreamingDelta обновляет streamingContent.
+     * 3. После полного ответа срабатывает onTokenUsage (из StreamFrame.End) → буферизуется в pendingTokenUsage.
+     * 4. onAssistantMessage получает полный текст → сохраняет в БД с token usage,
+     *    обновляет UI, затем приостанавливается до следующего ввода пользователя.
+     *
+     * Агент не завершается сам — только через отмену Job (stopGeneration) или ошибку.
      */
     private suspend fun runAgent(userInput: String) {
         withContext(Dispatchers.Default) {
@@ -214,9 +341,6 @@ class ChatViewModel(
                             }
                         }
                     },
-                    // Blocking callback: agent suspends here until user types next message.
-                    // Uses streamedContent (accumulated chunks) if available, falling back to
-                    // the message param (for non-streaming responses).
                     onAssistantMessage = { message ->
                         val streamedContent = _uiState.value.streamingContent
                         val displayMessage = streamedContent.ifEmpty { message }
@@ -252,7 +376,6 @@ class ChatViewModel(
                             )
                         }
 
-                        // Suspend until sendMessage() sets currentUserResponse
                         val userResponse = _uiState
                             .first { it.currentUserResponse != null }
                             .currentUserResponse
@@ -276,23 +399,10 @@ class ChatViewModel(
                     },
                 )
 
-                val result = agent.run(userInput, sessionId)
-
-                val resultText = "✅ Результат: $result"
-                val doneText = "Агент завершил работу."
-                sendMessageUseCase.saveSystemMessage(sessionId, resultText)
-                sendMessageUseCase.saveSystemMessage(sessionId, doneText)
-
-                _uiState.update {
-                    it.copy(
-                        messages = it.messages +
-                            ChatMessage.SystemMessage(resultText) +
-                            ChatMessage.SystemMessage(doneText),
-                        isInputEnabled = false,
-                        isLoading = false,
-                        isChatEnded = true,
-                    )
-                }
+                agent.run(userInput, sessionId)
+            } catch (e: CancellationException) {
+                /* Пользователь остановил генерацию — stopGeneration() уже обработал UI/DB */
+                throw e
             } catch (e: Exception) {
                 val errorText = "Ошибка: ${e.message}"
                 sendMessageUseCase.saveErrorMessage(sessionId, errorText)

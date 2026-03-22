@@ -72,25 +72,28 @@ class ChatAgentProvider(
         val executor = MultiLLMPromptExecutor(llmClient)
         val model = DeepSeekModels.DeepSeekChat
 
+        // ExitTool зарегистрирован для валидации графа (Koog требует путь к nodeFinish),
+        // но system prompt не упоминает его — LLM не будет вызывать его самостоятельно.
         val toolRegistry = ToolRegistry {
             tool(ExitTool)
         }
 
-        // Agent strategy graph:
+        // Agent strategy graph (бесконечный цикл диалога):
         //   nodeStart → mapStringToRequests → applyRequestToSession → nodeStreaming
-        //   nodeStreaming → [tool calls?] → nodeExecuteTools → [exit?] → nodeFinish
-        //                                                    → [not exit] → loop back
+        //   nodeStreaming → [tool calls] → nodeExecuteTools → [exit?] → nodeFinish (формально)
+        //                                                   → [else] → loop back
         //   nodeStreaming → [no tool calls] → extractTextFromResponse → nodeAssistantMessage → loop back
+        //
+        // На практике ExitTool никогда не вызывается — LLM не знает о нём.
+        // Завершение диалога — через отмену Job пользователем (stopGeneration).
         val agentStrategy = strategy<String, String>(title) {
             val nodeStreaming by nodeLLMRequestStreamingAndSendResults<List<Message.Request>>()
             val nodeExecuteTools by nodeExecuteMultipleTools(parallelTools = true)
 
-            // Wraps raw user input string into Koog Message.User
             val mapStringToRequests by node<String, List<Message.Request>> { input ->
                 listOf(Message.User(content = input, metaInfo = RequestMetaInfo.Empty))
             }
 
-            // Appends user messages and tool results to the LLM session prompt
             val applyRequestToSession by node<List<Message.Request>, List<Message.Request>> { input ->
                 llm.writeSession {
                     appendPrompt {
@@ -107,7 +110,6 @@ class ChatAgentProvider(
                 input.map { it.toMessage() }
             }
 
-            // Suspends until user provides the next message via UI
             val nodeAssistantMessage by node<String, String> { message -> onAssistantMessage(message) }
 
             val extractTextFromResponse by node<List<Message.Response>, String> { responses ->
@@ -120,14 +122,14 @@ class ChatAgentProvider(
 
             edge(nodeStreaming forwardTo nodeExecuteTools onMultipleToolCalls { true })
 
-            // ExitTool terminates the agent loop
+            // ExitTool → nodeFinish (формальный edge для валидации графа Koog)
             edge(
                 nodeExecuteTools forwardTo nodeFinish
                     onCondition { it.singleOrNull()?.tool == ExitTool.name }
                     transformed { it.single().content }
             )
 
-            // Non-exit tool results loop back for another LLM call
+            // Все остальные tool calls возвращаются обратно в LLM
             edge(
                 nodeExecuteTools forwardTo mapToolCallsToRequests
                     onCondition { it.singleOrNull()?.tool != ExitTool.name }
@@ -135,14 +137,12 @@ class ChatAgentProvider(
 
             edge(mapToolCallsToRequests forwardTo applyRequestToSession)
 
-            // No tool calls → extract text and present to user
             edge(
                 nodeStreaming forwardTo extractTextFromResponse
                     onCondition { it.filterIsInstance<Message.Tool.Call>().isEmpty() }
             )
 
             edge(extractTextFromResponse forwardTo nodeAssistantMessage)
-            // User's next message loops back into the strategy
             edge(nodeAssistantMessage forwardTo mapStringToRequests)
         }
 
@@ -152,12 +152,11 @@ class ChatAgentProvider(
                     """
                     You are a helpful AI assistant. Answer user questions clearly and concisely.
                     Support both Russian and English languages.
-                    If the user asks to stop, call the exit tool to finish the conversation politely.
                     """.trimIndent()
                 )
             },
             model = model,
-            maxAgentIterations = 50,
+            maxAgentIterations = 1000,
         )
 
         return AIAgent(
@@ -196,6 +195,7 @@ class ChatAgentProvider(
                 }
 
                 onAgentExecutionFailed { ctx ->
+                    if (ctx.throwable is kotlinx.coroutines.CancellationException) return@onAgentExecutionFailed
                     onErrorEvent("${ctx.throwable.message}")
                 }
 

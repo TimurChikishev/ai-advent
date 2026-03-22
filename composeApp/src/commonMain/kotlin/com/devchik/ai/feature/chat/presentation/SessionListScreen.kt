@@ -186,6 +186,14 @@ private fun SessionCard(
                     )
                 }
 
+                if (session.parentSessionId != null) {
+                    Text(
+                        text = "↳ ветка",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.tertiary,
+                    )
+                }
+
                 if (session.lastMessage.isNotEmpty()) {
                     Spacer(Modifier.height(4.dp))
                     Text(
