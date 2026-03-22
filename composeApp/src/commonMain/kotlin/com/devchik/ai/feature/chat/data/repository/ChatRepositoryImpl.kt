@@ -18,12 +18,24 @@ import kotlin.time.Clock
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 
+/**
+ * Data-layer implementation of [ChatRepository].
+ *
+ * Bridges the domain layer with Room database and [RoomChatHistoryProvider].
+ * - Read operations (getSessions, loadHistory) go directly to Room DAOs.
+ * - Write operations (append*) delegate to [chatHistoryProvider] which handles
+ *   mutex-synchronized DB inserts and session timestamp updates.
+ * - [loadHistory] maps all persisted message types (user, assistant, system, error)
+ *   to domain [ChatMessageItem]s, including token usage for assistant messages.
+ *   Blank-content entities are filtered out (artifacts from tool_call/tool_result rows).
+ */
 class ChatRepositoryImpl(
     private val chatSessionDao: ChatSessionDao,
     private val chatMessageDao: ChatMessageDao,
     private val chatHistoryProvider: RoomChatHistoryProvider,
 ) : ChatRepository {
 
+    /** Emits session list reactively. Preview text is taken from the last user/assistant message. */
     override fun getSessions(): Flow<List<ChatSession>> {
         return chatSessionDao.getAllSessions().map { entities ->
             entities.map { entity ->
@@ -59,6 +71,11 @@ class ChatRepositoryImpl(
         chatSessionDao.deleteSession(id)
     }
 
+    /**
+     * Loads full UI-visible chat history for a session.
+     * Unlike [RoomChatHistoryProvider.load] (which returns only user+assistant for LLM context),
+     * this includes system and error messages for complete UI restoration.
+     */
     override suspend fun loadHistory(sessionId: String): List<ChatMessageItem> {
         return chatMessageDao.getMessages(sessionId).mapNotNull { entity ->
             if (entity.content.isBlank()) return@mapNotNull null
@@ -88,6 +105,11 @@ class ChatRepositoryImpl(
         )
     }
 
+    /**
+     * Uses [appendRawEntity] instead of [appendMessage] because we need to persist
+     * token usage fields (inputTokens, outputTokens, totalTokens) which don't exist
+     * in Koog's [Message.Assistant].
+     */
     override suspend fun appendAssistantMessage(sessionId: String, content: String, tokenUsage: TokenUsage?) {
         chatHistoryProvider.appendRawEntity(
             ChatMessageEntity(
@@ -109,6 +131,7 @@ class ChatRepositoryImpl(
         )
     }
 
+    /** Uses [appendRawEntity] because ROLE_ERROR has no Koog Message equivalent. */
     override suspend fun appendErrorMessage(sessionId: String, content: String) {
         chatHistoryProvider.appendRawEntity(
             ChatMessageEntity(

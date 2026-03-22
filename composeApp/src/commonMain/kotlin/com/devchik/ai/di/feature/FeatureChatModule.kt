@@ -17,7 +17,26 @@ import org.koin.core.module.dsl.viewModel
 import org.koin.dsl.bind
 import org.koin.dsl.module
 
+/**
+ * Koin DI module for the chat feature. Wires all layers together:
+ *
+ * Data layer:
+ * - Room DAOs (singleton, from AppDatabase)
+ * - [RoomChatHistoryProvider] (singleton) — shared between ChatAgentProvider and ChatRepositoryImpl
+ * - [ChatRepositoryImpl] bound as [ChatRepository]
+ *
+ * Agent layer:
+ * - [ChatAgentProvider] (singleton) — holds API key, creates agents on demand
+ *
+ * Domain layer:
+ * - UseCases (factory — new instance per injection, stateless)
+ *
+ * Presentation layer:
+ * - [ChatViewModel] — scoped per session via Koin params (sessionId)
+ * - [SessionListViewModel] — one per screen
+ */
 val featureChatModule = module {
+    // --- Data layer ---
     single { get<AppDatabase>().chatSessionDao() }
     single { get<AppDatabase>().chatMessageDao() }
     single { RoomChatHistoryProvider(chatMessageDao = get(), chatSessionDao = get()) }
@@ -36,12 +55,15 @@ val featureChatModule = module {
         )
     } bind ChatRepository::class
 
+    // --- Domain layer (stateless, factory scope) ---
     factory { GetSessionsUseCase(repository = get()) }
     factory { CreateSessionUseCase(repository = get()) }
     factory { DeleteSessionUseCase(repository = get()) }
     factory { LoadChatHistoryUseCase(repository = get()) }
     factory { SendMessageUseCase(repository = get()) }
 
+    // --- Presentation layer ---
+    // ChatViewModel receives sessionId via Koin parametersOf(sessionId)
     viewModel { params ->
         ChatViewModel(
             chatAgentProvider = get(),

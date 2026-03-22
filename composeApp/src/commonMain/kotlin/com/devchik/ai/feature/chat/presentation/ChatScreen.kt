@@ -48,6 +48,13 @@ import com.mikepenz.markdown.m3.markdownTypography
 import com.mikepenz.markdown.model.rememberMarkdownState
 import org.koin.compose.viewmodel.koinViewModel
 
+/**
+ * Main chat screen. Displays message history, streaming responses, and input controls.
+ *
+ * Layout: TopAppBar (title + session token totals) → LazyColumn (messages) → input bar or restart button.
+ * Message types: UserBubble (right-aligned), AgentBubble (left, markdown, per-message tokens),
+ * SystemBubble (centered info), ErrorBubble (left, error style), StreamingBubble (live typing indicator).
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(

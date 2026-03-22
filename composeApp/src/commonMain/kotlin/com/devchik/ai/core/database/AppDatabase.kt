@@ -14,7 +14,7 @@ import com.devchik.ai.core.database.entity.ChatSessionEntity
         ChatSessionEntity::class,
         ChatMessageEntity::class,
     ],
-    version = 1,
+    version = 2,
 )
 @ConstructedBy(AppDatabaseConstructor::class)
 abstract class AppDatabase : RoomDatabase() {

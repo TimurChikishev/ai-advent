@@ -21,6 +21,23 @@ import ai.koog.prompt.message.Message
 import ai.koog.prompt.message.RequestMetaInfo
 import ai.koog.prompt.streaming.StreamFrame
 
+/**
+ * Factory that creates configured Koog [AIAgent] instances for the chat feature.
+ *
+ * Architecture overview:
+ * - Uses DeepSeek API via Koog's [DeepSeekLLMClient].
+ * - Agent strategy is a graph: user input → LLM streaming request → either tool execution
+ *   or assistant text response, looping back for multi-turn dialogue.
+ * - [ChatMemory] feature restores conversation context from [chatHistoryProvider] on agent start.
+ *   Note: [RoomChatHistoryProvider.store] is a no-op — persistence is handled incrementally
+ *   by [ChatRepositoryImpl] to avoid overwriting system/error messages and
+ *   re-inserting tool_call/tool_result entries that break DeepSeek API context.
+ * - Callbacks (onToolCallEvent, onAssistantMessage, etc.) bridge agent events to the ViewModel/UI.
+ * - [onAssistantMessage] is a **blocking** callback: the agent suspends until the user types
+ *   the next message (returned as String), enabling multi-turn conversation within a single
+ *   agent.run() invocation.
+ * - Token usage is captured from [StreamFrame.End.metaInfo] and forwarded via [onTokenUsage].
+ */
 class ChatAgentProvider(
     private val apiKey: String,
     private val chatHistoryProvider: ChatHistoryProvider,
@@ -34,6 +51,16 @@ class ChatAgentProvider(
         val totalTokens: Int,
     )
 
+    /**
+     * Creates and returns a new [AIAgent] wired to the given callbacks.
+     *
+     * @param onToolCallEvent  called when the agent invokes a tool (e.g., ExitTool).
+     * @param onErrorEvent     called on agent execution failure.
+     * @param onAssistantMessage suspending callback that receives the full assistant response text
+     *                           and must return the next user message (blocks agent until user replies).
+     * @param onStreamingDelta called for each streaming text chunk from the LLM.
+     * @param onTokenUsage     called once per LLM response with input/output/total token counts.
+     */
     suspend fun provideAgent(
         onToolCallEvent: suspend (String) -> Unit,
         onErrorEvent: suspend (String) -> Unit,
@@ -49,14 +76,21 @@ class ChatAgentProvider(
             tool(ExitTool)
         }
 
+        // Agent strategy graph:
+        //   nodeStart → mapStringToRequests → applyRequestToSession → nodeStreaming
+        //   nodeStreaming → [tool calls?] → nodeExecuteTools → [exit?] → nodeFinish
+        //                                                    → [not exit] → loop back
+        //   nodeStreaming → [no tool calls] → extractTextFromResponse → nodeAssistantMessage → loop back
         val agentStrategy = strategy<String, String>(title) {
             val nodeStreaming by nodeLLMRequestStreamingAndSendResults<List<Message.Request>>()
             val nodeExecuteTools by nodeExecuteMultipleTools(parallelTools = true)
 
+            // Wraps raw user input string into Koog Message.User
             val mapStringToRequests by node<String, List<Message.Request>> { input ->
                 listOf(Message.User(content = input, metaInfo = RequestMetaInfo.Empty))
             }
 
+            // Appends user messages and tool results to the LLM session prompt
             val applyRequestToSession by node<List<Message.Request>, List<Message.Request>> { input ->
                 llm.writeSession {
                     appendPrompt {
@@ -73,6 +107,7 @@ class ChatAgentProvider(
                 input.map { it.toMessage() }
             }
 
+            // Suspends until user provides the next message via UI
             val nodeAssistantMessage by node<String, String> { message -> onAssistantMessage(message) }
 
             val extractTextFromResponse by node<List<Message.Response>, String> { responses ->
@@ -85,12 +120,14 @@ class ChatAgentProvider(
 
             edge(nodeStreaming forwardTo nodeExecuteTools onMultipleToolCalls { true })
 
+            // ExitTool terminates the agent loop
             edge(
                 nodeExecuteTools forwardTo nodeFinish
                     onCondition { it.singleOrNull()?.tool == ExitTool.name }
                     transformed { it.single().content }
             )
 
+            // Non-exit tool results loop back for another LLM call
             edge(
                 nodeExecuteTools forwardTo mapToolCallsToRequests
                     onCondition { it.singleOrNull()?.tool != ExitTool.name }
@@ -98,12 +135,14 @@ class ChatAgentProvider(
 
             edge(mapToolCallsToRequests forwardTo applyRequestToSession)
 
+            // No tool calls → extract text and present to user
             edge(
                 nodeStreaming forwardTo extractTextFromResponse
                     onCondition { it.filterIsInstance<Message.Tool.Call>().isEmpty() }
             )
 
             edge(extractTextFromResponse forwardTo nodeAssistantMessage)
+            // User's next message loops back into the strategy
             edge(nodeAssistantMessage forwardTo mapStringToRequests)
         }
 
@@ -127,6 +166,8 @@ class ChatAgentProvider(
             agentConfig = agentConfig,
             toolRegistry = toolRegistry,
         ) {
+            // ChatMemory loads conversation history on agent start via chatHistoryProvider.load().
+            // store() is a no-op — see RoomChatHistoryProvider for details.
             install(ChatMemory) {
                 chatHistoryProvider = this@ChatAgentProvider.chatHistoryProvider
                 windowSize(50)
@@ -137,6 +178,7 @@ class ChatAgentProvider(
                     onToolCallEvent("Tool ${ctx.toolName}, args ${ctx.toolArgs}")
                 }
 
+                // Token usage is only available in StreamFrame.End (after full response is received)
                 onLLMStreamingFrameReceived { ctx ->
                     when (val frame = ctx.streamFrame) {
                         is StreamFrame.TextDelta -> onStreamingDelta(frame.text)

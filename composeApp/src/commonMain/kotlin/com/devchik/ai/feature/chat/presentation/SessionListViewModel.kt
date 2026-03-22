@@ -24,6 +24,11 @@ data class SessionItem(
     val updatedAt: Long,
 )
 
+/**
+ * ViewModel for the session list screen.
+ * Reactively observes all chat sessions via [GetSessionsUseCase] (backed by Room Flow).
+ * Session creation returns the new ID so the UI can navigate to it immediately.
+ */
 class SessionListViewModel(
     private val getSessionsUseCase: GetSessionsUseCase,
     private val createSessionUseCase: CreateSessionUseCase,
@@ -42,10 +47,12 @@ class SessionListViewModel(
         }
     }
 
+    /** Creates a new session and returns its ID for immediate navigation. */
     suspend fun createNewSession(): String {
         return createSessionUseCase("Новый чат")
     }
 
+    /** Deletes session by ID. Cascade delete removes all messages (FK constraint in Room). */
     fun deleteSession(id: String) {
         viewModelScope.launch {
             deleteSessionUseCase(id)
