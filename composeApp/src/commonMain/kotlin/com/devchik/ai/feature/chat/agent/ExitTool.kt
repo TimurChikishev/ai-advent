@@ -4,6 +4,11 @@ import ai.koog.agents.core.tools.SimpleTool
 import ai.koog.agents.core.tools.annotations.LLMDescription
 import kotlinx.serialization.Serializable
 
+/**
+ * Tool that the LLM can invoke to end the conversation.
+ * When the agent strategy detects this tool's result, it routes to nodeFinish,
+ * terminating the agent.run() loop.
+ */
 object ExitTool : SimpleTool<ExitTool.Args>(
     argsSerializer = Args.serializer(),
     name = "exit",

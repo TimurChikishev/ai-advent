@@ -16,6 +16,22 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/**
+ * ViewModel for a single chat session. Manages UI state and orchestrates the Koog agent lifecycle.
+ *
+ * Lifecycle:
+ * 1. On init, loads persisted history from DB via [loadChatHistoryUseCase] and restores UI state
+ *    (messages, token totals, isChatEnded flag).
+ * 2. On first user message, creates the agent via [chatAgentProvider.provideAgent] and calls
+ *    agent.run(). The agent runs in a loop until ExitTool is called.
+ * 3. Multi-turn dialogue is achieved through the onAssistantMessage callback: the agent suspends
+ *    after each response, and resumes when [currentUserResponse] is set by [sendMessage].
+ * 4. All messages are persisted incrementally via [sendMessageUseCase] as they occur.
+ *
+ * Threading: agent.run() executes on [Dispatchers.Default]. UI state updates happen via
+ * [_uiState.update] which is thread-safe. DB writes in callbacks are suspend functions
+ * protected by [RoomChatHistoryProvider]'s mutex.
+ */
 class ChatViewModel(
     private val chatAgentProvider: ChatAgentProvider,
     private val loadChatHistoryUseCase: LoadChatHistoryUseCase,
@@ -35,6 +51,11 @@ class ChatViewModel(
         loadHistory()
     }
 
+    /**
+     * Restores chat state from the database.
+     * Rebuilds the message list, accumulates token totals from saved assistant messages,
+     * and detects [CHAT_ENDED_MARKER] to restore isChatEnded / isInputEnabled.
+     */
     private fun loadHistory() {
         viewModelScope.launch {
             val history = loadChatHistoryUseCase(sessionId)
@@ -73,6 +94,25 @@ class ChatViewModel(
                     )
                 }
             }
+            refreshContextStats()
+        }
+    }
+
+    private suspend fun refreshContextStats() {
+        try {
+            val stats = loadChatHistoryUseCase.getContextStats(sessionId)
+            _uiState.update {
+                it.copy(
+                    contextStats = ContextStatsInfo(
+                        totalMessages = stats.totalMessages,
+                        summarizedMessages = stats.summarizedMessages,
+                        summaryCount = stats.summaryCount,
+                        isCompressed = stats.isCompressed,
+                    )
+                )
+            }
+        } catch (_: Exception) {
+            // Non-critical: stats display failure shouldn't break chat
         }
     }
 
@@ -84,6 +124,12 @@ class ChatViewModel(
         _uiState.update { it.copy(inputText = text) }
     }
 
+    /**
+     * Handles user message submission. Two modes:
+     * - **userResponseRequested=true**: agent is already running and suspended in onAssistantMessage.
+     *   Sets currentUserResponse to unblock the agent coroutine.
+     * - **userResponseRequested=false**: first message — launches [runAgent] to start the agent loop.
+     */
     fun sendMessage() {
         val userInput = _uiState.value.inputText.trim()
         if (userInput.isEmpty()) return
@@ -127,6 +173,20 @@ class ChatViewModel(
         }
     }
 
+    /**
+     * Creates and runs the Koog agent for this session.
+     *
+     * The agent loop:
+     * 1. Agent sends user input to LLM via streaming.
+     * 2. LLM response arrives as StreamFrame chunks → onStreamingDelta updates streamingContent.
+     * 3. After full response, onTokenUsage fires (from StreamFrame.End) → stored in pendingTokenUsage.
+     * 4. onAssistantMessage fires with complete text → saves to DB with token usage,
+     *    updates UI, then suspends until user provides next input via currentUserResponse.
+     * 5. If LLM calls ExitTool, agent.run() returns and we mark chat as ended.
+     *
+     * Token flow: onTokenUsage fires *before* onAssistantMessage for the same response,
+     * so we buffer in pendingTokenUsage and consume it when saving the assistant message.
+     */
     private suspend fun runAgent(userInput: String) {
         withContext(Dispatchers.Default) {
             try {
@@ -154,6 +214,9 @@ class ChatViewModel(
                             }
                         }
                     },
+                    // Blocking callback: agent suspends here until user types next message.
+                    // Uses streamedContent (accumulated chunks) if available, falling back to
+                    // the message param (for non-streaming responses).
                     onAssistantMessage = { message ->
                         val streamedContent = _uiState.value.streamingContent
                         val displayMessage = streamedContent.ifEmpty { message }
@@ -164,6 +227,7 @@ class ChatViewModel(
                             TokenUsage(it.inputTokens, it.outputTokens, it.totalTokens)
                         }
                         sendMessageUseCase.saveAssistantMessage(sessionId, displayMessage, domainTokenUsage)
+                        refreshContextStats()
 
                         _uiState.update { state ->
                             val newSessionTokens = if (tokenUsage != null) {
@@ -188,6 +252,7 @@ class ChatViewModel(
                             )
                         }
 
+                        // Suspend until sendMessage() sets currentUserResponse
                         val userResponse = _uiState
                             .first { it.currentUserResponse != null }
                             .currentUserResponse

@@ -39,6 +39,10 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import org.koin.compose.viewmodel.koinViewModel
 
+/**
+ * Screen displaying all chat sessions. Entry point to the chat feature.
+ * FAB creates a new session and navigates to it. Swipe-to-dismiss deletes sessions.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SessionListScreen(
