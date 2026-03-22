@@ -22,6 +22,14 @@ data class TokenUsageInfo(
  * On session restore (loadHistory): messages rebuilt from DB, isChatEnded and
  * sessionTotalTokens restored from persisted data.
  */
+/** Context compression statistics displayed in the chat UI. */
+data class ContextStatsInfo(
+    val totalMessages: Int = 0,
+    val summarizedMessages: Int = 0,
+    val summaryCount: Int = 0,
+    val isCompressed: Boolean = false,
+)
+
 data class ChatUiState(
     val title: String = "Koog Chat",
     val messages: List<ChatMessage> = emptyList(),
@@ -43,6 +51,8 @@ data class ChatUiState(
     val lastRequestTokens: TokenUsageInfo? = null,
     /** Accumulated token usage across all assistant responses in this session. */
     val sessionTotalTokens: TokenUsageInfo = TokenUsageInfo(),
+    /** Context compression statistics. Updated after each assistant response. */
+    val contextStats: ContextStatsInfo = ContextStatsInfo(),
 )
 
 /**

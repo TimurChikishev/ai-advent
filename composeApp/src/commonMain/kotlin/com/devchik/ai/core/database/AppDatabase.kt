@@ -6,20 +6,24 @@ import androidx.room.RoomDatabase
 import androidx.room.RoomDatabaseConstructor
 import com.devchik.ai.core.database.dao.ChatMessageDao
 import com.devchik.ai.core.database.dao.ChatSessionDao
+import com.devchik.ai.core.database.dao.ChatSummaryDao
 import com.devchik.ai.core.database.entity.ChatMessageEntity
 import com.devchik.ai.core.database.entity.ChatSessionEntity
+import com.devchik.ai.core.database.entity.ChatSummaryEntity
 
 @Database(
     entities = [
         ChatSessionEntity::class,
         ChatMessageEntity::class,
+        ChatSummaryEntity::class,
     ],
-    version = 2,
+    version = 3,
 )
 @ConstructedBy(AppDatabaseConstructor::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun chatSessionDao(): ChatSessionDao
     abstract fun chatMessageDao(): ChatMessageDao
+    abstract fun chatSummaryDao(): ChatSummaryDao
 
     companion object {
         const val DATABASE_NAME = "ai_chat.db"

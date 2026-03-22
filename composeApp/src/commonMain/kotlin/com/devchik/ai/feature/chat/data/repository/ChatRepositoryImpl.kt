@@ -7,11 +7,13 @@ import com.devchik.ai.core.database.dao.ChatMessageDao
 import com.devchik.ai.core.database.dao.ChatSessionDao
 import com.devchik.ai.core.database.entity.ChatMessageEntity
 import com.devchik.ai.core.database.entity.ChatSessionEntity
+import com.devchik.ai.feature.chat.data.ContextManager
 import com.devchik.ai.feature.chat.data.RoomChatHistoryProvider
 import com.devchik.ai.feature.chat.domain.model.ChatMessageItem
 import com.devchik.ai.feature.chat.domain.model.ChatSession
 import com.devchik.ai.feature.chat.domain.model.TokenUsage
 import com.devchik.ai.feature.chat.domain.repository.ChatRepository
+import com.devchik.ai.feature.chat.domain.repository.ContextStats
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlin.time.Clock
@@ -33,6 +35,7 @@ class ChatRepositoryImpl(
     private val chatSessionDao: ChatSessionDao,
     private val chatMessageDao: ChatMessageDao,
     private val chatHistoryProvider: RoomChatHistoryProvider,
+    private val contextManager: ContextManager,
 ) : ChatRepository {
 
     /** Emits session list reactively. Preview text is taken from the last user/assistant message. */
@@ -140,6 +143,16 @@ class ChatRepositoryImpl(
                 content = content,
                 timestamp = 0,
             )
+        )
+    }
+
+    override suspend fun getContextStats(sessionId: String): ContextStats {
+        val stats = contextManager.getSummaryStats(sessionId)
+        return ContextStats(
+            totalMessages = stats.totalMessages,
+            summarizedMessages = stats.summarizedMessages,
+            summaryCount = stats.summaryCount,
+            isCompressed = stats.isCompressed,
         )
     }
 }

@@ -94,6 +94,25 @@ class ChatViewModel(
                     )
                 }
             }
+            refreshContextStats()
+        }
+    }
+
+    private suspend fun refreshContextStats() {
+        try {
+            val stats = loadChatHistoryUseCase.getContextStats(sessionId)
+            _uiState.update {
+                it.copy(
+                    contextStats = ContextStatsInfo(
+                        totalMessages = stats.totalMessages,
+                        summarizedMessages = stats.summarizedMessages,
+                        summaryCount = stats.summaryCount,
+                        isCompressed = stats.isCompressed,
+                    )
+                )
+            }
+        } catch (_: Exception) {
+            // Non-critical: stats display failure shouldn't break chat
         }
     }
 
@@ -208,6 +227,7 @@ class ChatViewModel(
                             TokenUsage(it.inputTokens, it.outputTokens, it.totalTokens)
                         }
                         sendMessageUseCase.saveAssistantMessage(sessionId, displayMessage, domainTokenUsage)
+                        refreshContextStats()
 
                         _uiState.update { state ->
                             val newSessionTokens = if (tokenUsage != null) {

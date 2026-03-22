@@ -21,4 +21,13 @@ interface ChatRepository {
     suspend fun appendAssistantMessage(sessionId: String, content: String, tokenUsage: TokenUsage? = null)
     suspend fun appendSystemMessage(sessionId: String, content: String)
     suspend fun appendErrorMessage(sessionId: String, content: String)
+    /** Returns context compression statistics for the given session. */
+    suspend fun getContextStats(sessionId: String): ContextStats
 }
+
+data class ContextStats(
+    val totalMessages: Int,
+    val summarizedMessages: Int,
+    val summaryCount: Int,
+    val isCompressed: Boolean,
+)

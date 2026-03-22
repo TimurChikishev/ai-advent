@@ -85,6 +85,15 @@ fun ChatScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
+                        if (uiState.contextStats.isCompressed) {
+                            Text(
+                                text = "Context: ${uiState.contextStats.summarizedMessages}/" +
+                                    "${uiState.contextStats.totalMessages} msgs compressed " +
+                                    "(${uiState.contextStats.summaryCount} summaries)",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.tertiary,
+                            )
+                        }
                     }
                 },
                 navigationIcon = {

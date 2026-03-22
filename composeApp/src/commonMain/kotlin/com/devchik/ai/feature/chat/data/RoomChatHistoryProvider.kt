@@ -37,6 +37,7 @@ import kotlin.time.Clock
 class RoomChatHistoryProvider(
     private val chatMessageDao: ChatMessageDao,
     private val chatSessionDao: ChatSessionDao,
+    private val contextManager: ContextManager,
 ) : ChatHistoryProvider {
 
     private val mutex = Mutex()
@@ -47,15 +48,15 @@ class RoomChatHistoryProvider(
 
     /**
      * Loads conversation context for Koog's ChatMemory.
-     * Only user and assistant messages — everything else is filtered out
-     * to keep the LLM prompt clean and avoid DeepSeek API errors.
+     *
+     * Delegates to [ContextManager] which returns an optimized context:
+     * - If <= [ContextManager.RECENT_WINDOW] messages exist, all are returned as-is.
+     * - Otherwise: `[summary system message] + [unsummarized older messages] + [recent N messages]`.
+     *
+     * This keeps the LLM prompt compact while preserving conversation continuity.
      */
     override suspend fun load(conversationId: String): List<Message> {
-        return mutex.withLock {
-            chatMessageDao.getMessages(conversationId)
-                .filter { it.role == ROLE_USER || it.role == ROLE_ASSISTANT }
-                .mapNotNull { it.toMessage() }
-        }
+        return contextManager.buildContext(conversationId)
     }
 
     /** Converts a Koog [Message] to entity and inserts. Used for user/system messages. */

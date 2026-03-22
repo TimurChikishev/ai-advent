@@ -3,6 +3,7 @@ package com.devchik.ai.di.feature
 import com.devchik.ai.BuildKonfig
 import com.devchik.ai.core.database.AppDatabase
 import com.devchik.ai.feature.chat.agent.ChatAgentProvider
+import com.devchik.ai.feature.chat.data.ContextManager
 import com.devchik.ai.feature.chat.data.RoomChatHistoryProvider
 import com.devchik.ai.feature.chat.data.repository.ChatRepositoryImpl
 import com.devchik.ai.feature.chat.domain.repository.ChatRepository
@@ -39,7 +40,21 @@ val featureChatModule = module {
     // --- Data layer ---
     single { get<AppDatabase>().chatSessionDao() }
     single { get<AppDatabase>().chatMessageDao() }
-    single { RoomChatHistoryProvider(chatMessageDao = get(), chatSessionDao = get()) }
+    single { get<AppDatabase>().chatSummaryDao() }
+    single {
+        ContextManager(
+            chatMessageDao = get(),
+            chatSummaryDao = get(),
+            httpClient = get(),
+        )
+    }
+    single {
+        RoomChatHistoryProvider(
+            chatMessageDao = get(),
+            chatSessionDao = get(),
+            contextManager = get(),
+        )
+    }
     single {
         ChatAgentProvider(
             apiKey = BuildKonfig.DEEPSEEK_API_KEY,
@@ -52,6 +67,7 @@ val featureChatModule = module {
             chatSessionDao = get(),
             chatMessageDao = get(),
             chatHistoryProvider = get(),
+            contextManager = get(),
         )
     } bind ChatRepository::class
 
