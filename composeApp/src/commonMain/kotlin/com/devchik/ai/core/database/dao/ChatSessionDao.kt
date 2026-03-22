@@ -27,4 +27,12 @@ interface ChatSessionDao {
 
     @Query("UPDATE chat_sessions SET updatedAt = :updatedAt WHERE id = :id")
     suspend fun updateSessionTimestamp(id: String, updatedAt: Long)
+
+    /** Обновляет настройки стратегии контекста для конкретной сессии */
+    @Query("UPDATE chat_sessions SET contextStrategy = :strategy, contextWindowSize = :windowSize WHERE id = :id")
+    suspend fun updateSessionContextSettings(id: String, strategy: String?, windowSize: Int?)
+
+    /** Все ветки (дочерние сессии) для данной родительской сессии */
+    @Query("SELECT * FROM chat_sessions WHERE parentSessionId = :parentId ORDER BY createdAt DESC")
+    suspend fun getBranches(parentId: String): List<ChatSessionEntity>
 }

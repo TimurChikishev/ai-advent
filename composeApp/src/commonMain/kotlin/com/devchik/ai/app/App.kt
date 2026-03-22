@@ -75,6 +75,9 @@ fun App() {
                 )
                 ChatScreen(
                     onBack = { navController.popBackStack() },
+                    onNavigateToBranch = { branchSessionId ->
+                        navController.navigate(KoogChatSessionRoute(branchSessionId))
+                    },
                     viewModel = viewModel,
                 )
             }
